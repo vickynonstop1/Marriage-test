@@ -1,0 +1,408 @@
+import React, { useState, useEffect } from 'react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getFirestore, 
+  doc, 
+  setDoc, 
+  onSnapshot, 
+  collection 
+} from 'firebase/firestore';
+import { 
+  getAuth, 
+  signInAnonymously, 
+  onAuthStateChanged,
+  signInWithCustomToken 
+} from 'firebase/auth';
+import { 
+  Heart, 
+  Users, 
+  TrendingUp, 
+  RefreshCw, 
+  ChevronLeft, 
+  ChevronRight, 
+  Share2,
+  Clock
+} from 'lucide-react';
+
+// --- Firebase 配置 (環境變數將自動注入) ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'marriage-test-001';
+
+// 題目數據
+const questions = [
+  { id: 1, text: "如果兩個人收入差很多，家庭開支應該按收入比例分擔。", cat: "財務" },
+  { id: 2, text: "結婚後每個人仍然應該保留自己的個人財務帳戶。", cat: "財務" },
+  { id: 3, text: "家庭的大額支出應該必須兩人同意。", cat: "財務" },
+  { id: 4, text: "如果一方收入很高，他／她承擔更多家庭開支是合理的。", cat: "財務" },
+  { id: 5, text: "如果一方暫時沒有收入，另一方完全負責家庭開支是正常的。", cat: "財務" },
+  { id: 6, text: "結婚後收入應該主要視為共同資產。", cat: "財務" },
+  { id: 7, text: "家務應該盡量平均分配。", cat: "家務" },
+  { id: 8, text: "如果一方收入明顯更高，另一方多做家務是合理的。", cat: "家務" },
+  { id: 9, text: "如果經濟允許，請家務幫手比自己分配家務更好。", cat: "家務" },
+  { id: 10, text: "家務的多少不應該用來衡量誰付出更多。", cat: "家務" },
+  { id: 11, text: "如果父母年老需要照顧，夫妻應共同承擔責任。", cat: "家庭" },
+  { id: 12, text: "如果父母需要，可以考慮一起住。", cat: "家庭" },
+  { id: 13, text: "婚後節日應盡量公平分配給兩邊家庭。", cat: "家庭" },
+  { id: 14, text: "父母不應該參與夫妻的重要決定。", cat: "家庭" },
+  { id: 15, text: "在婚姻中，配偶應該優先於父母。", cat: "家庭" },
+  { id: 16, text: "婚禮不應該為了面子花太多錢。", cat: "社交" },
+  { id: 17, text: "婚禮費用應該由雙方共同負責。", cat: "社交" },
+  { id: 18, text: "如果雙方家庭經濟差距大，婚禮支出不一定需要完全平均。", cat: "社交" },
+  { id: 19, text: "我希望婚後有孩子。", cat: "育兒" },
+  { id: 20, text: "如果另一半不想要孩子，我可以接受。", cat: "育兒" },
+  { id: 21, text: "如果有孩子，育兒責任應該盡量平均。", cat: "育兒" },
+  { id: 22, text: "如果需要，一方暫時把事業放慢來照顧孩子是合理的。", cat: "育兒" },
+  { id: 23, text: "父母應該為孩子的教育投入大量資源。", cat: "育兒" },
+  { id: 24, text: "婚後應該優先考慮買房。", cat: "事業" },
+  { id: 25, text: "如果生活壓力太大，租房生活也可以接受。", cat: "事業" },
+  { id: 26, text: "為了事業發展搬到另一個城市是合理的。", cat: "事業" },
+  { id: 27, text: "如果兩人的事業發展衝突，應該找到雙方都能接受的平衡。", cat: "事業" },
+  { id: 28, text: "家庭重大決定應該兩人共同決定。", cat: "事業" },
+  { id: 29, text: "婚姻中不應該存在固定的「男性角色」或「女性角色」。", cat: "角色" },
+  { id: 30, text: "即使追求平等，家庭中仍然可能自然形成某一方主導。", cat: "角色" },
+  { id: 31, text: "如果女性收入比男性高，家庭角色也可以相應調整。", cat: "角色" },
+  { id: 32, text: "男性在婚姻中承擔更多經濟責任是合理的。", cat: "角色" },
+  { id: 33, text: "女性在家庭生活中承擔更多照顧角色是自然的。", cat: "角色" },
+  { id: 34, text: "婚姻中每個人仍然需要一定的個人空間。", cat: "個人" },
+  { id: 35, text: "結婚後仍然應該保留自己的社交圈。", cat: "個人" },
+  { id: 36, text: "婚姻中偶爾吵架是正常的。", cat: "溝通" },
+  { id: 37, text: "吵架時有時候先冷靜比立刻解決更好。", cat: "溝通" },
+  { id: 38, text: "如果婚姻遇到困難，可以接受尋求婚姻諮詢。", cat: "溝通" },
+  { id: 39, text: "如果婚姻長期不幸福，離婚是可以理解的。", cat: "溝通" },
+  { id: 40, text: "在婚姻中，尊重比激情更重要。", cat: "溝通" },
+  { id: 41, text: "如果一方賺的錢明顯更多，他／她在家庭決策中有更大話語權。", cat: "財務" },
+  { id: 42, text: "如果女性收入比男性高，男性承擔更多家務是合理的。", cat: "家務" },
+  { id: 43, text: "在婚姻中完全追求絕對公平其實不太現實。", cat: "角色" },
+  { id: 44, text: "如果一方工作壓力非常大，另一方多承擔家庭責任是合理的。", cat: "家務" },
+  { id: 45, text: "如果家庭收入主要來自一方，他／她在生活方式上有更多決定權。", cat: "財務" },
+  { id: 46, text: "婚後雙方仍然應該有各自可以自由支配的大部分時間。", cat: "個人" },
+  { id: 47, text: "婚姻中不應該要求另一半完全改變生活習慣。", cat: "個人" },
+  { id: 48, text: "如果一方需要長時間照顧自己的父母，另一方應該支持。", cat: "家庭" },
+  { id: 49, text: "如果雙方家庭文化差異很大，夫妻應該建立自己的家庭規則。", cat: "家庭" },
+  { id: 50, text: "夫妻應該把自己的小家庭放在雙方原生家庭之前。", cat: "家庭" },
+  { id: 51, text: "如果孩子出生後家庭壓力很大，降低生活品質是可以接受的。", cat: "育兒" },
+  { id: 52, text: "如果一方想暫時離開職場照顧家庭，另一方應該支持。", cat: "育兒" },
+  { id: 53, text: "如果一方的事業機會非常好，另一方為家庭做出一定犧牲是合理的。", cat: "事業" },
+  { id: 54, text: "如果家庭財務出現困難，夫妻應該一起降低生活標準。", cat: "財務" },
+  { id: 55, text: "如果夫妻對某些價值觀始終無法一致，也可以在尊重下共存。", cat: "溝通" },
+  { id: 56, text: "婚姻中最重要的是彼此信任而不是控制。", cat: "個人" },
+  { id: 57, text: "即使結婚，個人成長仍然應該被鼓勵。", cat: "個人" },
+  { id: 58, text: "如果一方成功很多，另一方不應該因此感到壓力。", cat: "事業" },
+  { id: 59, text: "在婚姻中長期的穩定比短期的浪漫更重要。", cat: "溝通" },
+  { id: 60, text: "一段好的婚姻應該讓兩個人都變得更自由，而不是更受限制。", cat: "個人" }
+];
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [view, setView] = useState('welcome'); // welcome, test, results
+  const [role, setRole] = useState(null); // 'user' or 'partner'
+  const [currentPage, setCurrentPage] = useState(0);
+  const [data, setData] = useState({ user: {}, partner: {}, updateTimes: {} });
+  const [isLoading, setIsLoading] = useState(true);
+
+  const itemsPerPage = 6;
+  const totalPages = Math.ceil(questions.length / itemsPerPage);
+
+  // 1. 初始化 Auth
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.error("Auth error", err);
+      }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return () => unsubscribe();
+  }, []);
+
+  // 2. 監聽 Firestore 數據 (使用固定的 docId 讓兩個人共享同一個測試)
+  // 在實際應用中，你可以透過 URL 的 hash 來區分不同的測試組，這裡簡化為單一公開測試
+  useEffect(() => {
+    if (!user) return;
+
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'marriage_test_shared');
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setData(docSnap.data());
+      }
+      setIsLoading(false);
+    }, (err) => {
+      console.error("Firestore error", err);
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  // 3. 儲存數據到雲端
+  const saveToCloud = async (newData) => {
+    if (!user) return;
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'marriage_test_shared');
+    await setDoc(docRef, newData, { merge: true });
+  };
+
+  const handleSelect = (qId, val) => {
+    const now = new Date().toISOString();
+    const updatedData = {
+      ...data,
+      [role]: { ...data[role], [qId]: val },
+      updateTimes: { ...data.updateTimes, [role]: now }
+    };
+    setData(updatedData);
+    saveToCloud(updatedData);
+  };
+
+  const handleReset = async () => {
+    if (window.confirm("確定要重置所有雲端數據嗎？這會影響到兩人的填寫結果。")) {
+      const reset = { user: {}, partner: {}, updateTimes: {} };
+      setData(reset);
+      await saveToCloud(reset);
+    }
+  };
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '尚未填寫';
+    const d = new Date(dateStr);
+    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <div className="animate-spin text-indigo-600"><RefreshCw size={48} /></div>
+      </div>
+    );
+  }
+
+  // --- 畫面渲染 ---
+
+  if (view === 'welcome') {
+    return (
+      <div className="max-w-4xl mx-auto p-4 py-12">
+        <div className="bg-white rounded-[2rem] shadow-2xl p-8 md:p-12 text-center border border-slate-100">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-red-50 text-red-500 rounded-full mb-6">
+            <Heart fill="currentColor" size={32} />
+          </div>
+          <h1 className="text-4xl font-extrabold text-slate-900 mb-4 tracking-tight">婚姻價值觀雲端對比測試</h1>
+          <p className="text-lg text-slate-500 mb-12 max-w-2xl mx-auto">
+            填寫後的結果會**即時同步到雲端**。您可以直接分享此網址給伴侶，雙方填寫完成後即可生成共識報告。
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+            {/* 自己 */}
+            <div className="group relative bg-slate-50 rounded-2xl p-6 border-2 border-transparent hover:border-indigo-500 transition-all cursor-pointer"
+                 onClick={() => { setRole('user'); setView('test'); }}>
+              <div className="bg-indigo-600 text-white w-full py-4 rounded-xl font-bold text-lg mb-4 shadow-lg group-hover:scale-[1.02] transition-transform">
+                我是自己 (User)
+              </div>
+              <div className="flex items-center justify-center gap-2 text-sm font-semibold text-slate-400">
+                <Clock size={14} /> {formatDate(data.updateTimes.user)}
+              </div>
+              <div className="mt-2 text-indigo-600 font-bold">
+                進度: {Object.keys(data.user).length} / 60
+              </div>
+            </div>
+
+            {/* 伴侶 */}
+            <div className="group relative bg-slate-50 rounded-2xl p-6 border-2 border-transparent hover:border-teal-500 transition-all cursor-pointer"
+                 onClick={() => { setRole('partner'); setView('test'); }}>
+              <div className="bg-teal-600 text-white w-full py-4 rounded-xl font-bold text-lg mb-4 shadow-lg group-hover:scale-[1.02] transition-transform">
+                我是伴侶 (Partner)
+              </div>
+              <div className="flex items-center justify-center gap-2 text-sm font-semibold text-slate-400">
+                <Clock size={14} /> {formatDate(data.updateTimes.partner)}
+              </div>
+              <div className="mt-2 text-teal-600 font-bold">
+                進度: {Object.keys(data.partner).length} / 60
+              </div>
+            </div>
+          </div>
+
+          <button onClick={() => setView('results')} className="inline-flex items-center gap-2 bg-slate-900 text-white px-10 py-4 rounded-full font-bold hover:bg-black transition-colors shadow-xl">
+            <TrendingUp size={20} /> 查看實時對比報告
+          </button>
+
+          <div className="mt-12 pt-8 border-t border-slate-100 flex flex-col items-center gap-4">
+             <div className="flex items-center gap-2 text-slate-400 text-sm">
+                <Share2 size={16} /> 分享此連結給另一半，他就能看到你的進度
+             </div>
+             <button onClick={handleReset} className="text-slate-300 hover:text-red-500 text-xs transition-colors">
+               重置雲端所有數據
+             </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'test') {
+    const currentQuestions = questions.slice(currentPage * itemsPerPage, (currentPage + 1) * itemsPerPage);
+    const answeredCount = Object.keys(data[role]).length;
+    const progressPercent = (answeredCount / 60) * 100;
+
+    return (
+      <div className="max-w-4xl mx-auto p-4 py-8">
+        <button onClick={() => setView('welcome')} className="flex items-center gap-1 text-slate-500 font-bold mb-6 hover:text-indigo-600 transition-colors">
+          <ChevronLeft size={20} /> 返回首頁 (雲端已自動存檔)
+        </button>
+
+        <div className="bg-white rounded-3xl shadow-sm p-6 mb-8 border border-slate-100">
+          <div className="flex justify-between items-end mb-4">
+            <div>
+              <p className="text-slate-400 text-sm font-bold uppercase tracking-wider">正在填寫身分</p>
+              <h2 className={`text-2xl font-black ${role === 'user' ? 'text-indigo-600' : 'text-teal-600'}`}>
+                {role === 'user' ? '自己 (User)' : '伴侶 (Partner)'}
+              </h2>
+            </div>
+            <div className="text-right">
+              <span className="text-2xl font-black text-slate-800">{answeredCount}</span>
+              <span className="text-slate-400 font-bold"> / 60</span>
+            </div>
+          </div>
+          <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
+            <div className={`h-full transition-all duration-500 ${role === 'user' ? 'bg-indigo-500' : 'bg-teal-500'}`} 
+                 style={{ width: `${progressPercent}%` }}></div>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          {currentQuestions.map(q => (
+            <div key={q.id} className="bg-white p-8 rounded-[2rem] shadow-sm border border-slate-50 text-center relative overflow-hidden">
+              <span className="absolute -top-2 -left-2 text-slate-50 text-6xl font-black select-none">Q{q.id}</span>
+              <p className="text-xl font-bold text-slate-800 mb-8 relative z-10">{q.text}</p>
+              
+              <div className="flex items-center justify-between max-w-md mx-auto gap-4">
+                <span className="text-xs font-bold text-slate-400 w-12 text-left leading-tight">非常不同意</span>
+                <div className="flex items-center gap-2 md:gap-4 flex-1 justify-center">
+                  {[1, 2, 3, 4, 5].map(val => (
+                    <button
+                      key={val}
+                      onClick={() => handleSelect(q.id, val)}
+                      className={`w-10 h-10 md:w-12 md:h-12 rounded-full border-2 transition-all transform hover:scale-110
+                        ${data[role][q.id] === val 
+                          ? (role === 'user' ? 'bg-indigo-600 border-indigo-600 shadow-lg scale-110' : 'bg-teal-600 border-teal-600 shadow-lg scale-110') 
+                          : 'bg-white border-slate-200 hover:border-slate-400'}`}
+                    />
+                  ))}
+                </div>
+                <span className="text-xs font-bold text-slate-400 w-12 text-right leading-tight">非常同意</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-10 flex flex-col items-center gap-6">
+          <div className="flex flex-wrap justify-center gap-2">
+            {Array.from({ length: totalPages }).map((_, i) => (
+              <button
+                key={i}
+                onClick={() => { setCurrentPage(i); window.scrollTo(0, 0); }}
+                className={`w-8 h-8 rounded-full text-xs font-bold transition-all ${currentPage === i ? 'bg-slate-800 text-white' : 'bg-white text-slate-400 border border-slate-200'}`}
+              >
+                {i + 1}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-4 w-full max-w-md">
+            <button 
+              disabled={currentPage === 0}
+              onClick={() => { setCurrentPage(c => c - 1); window.scrollTo(0, 0); }}
+              className="flex-1 py-4 bg-white border border-slate-200 rounded-2xl font-bold text-slate-600 disabled:opacity-30">
+              上一組
+            </button>
+            <button 
+              onClick={() => { 
+                if (currentPage + 1 < totalPages) {
+                  setCurrentPage(c => c + 1); 
+                  window.scrollTo(0, 0);
+                } else {
+                  setView('welcome');
+                }
+              }}
+              className="flex-2 px-12 py-4 bg-slate-900 text-white rounded-2xl font-bold hover:bg-black transition-all">
+              {currentPage + 1 === totalPages ? "完成填寫" : "下一組題目"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'results') {
+    const diffItems = questions.map(q => {
+      const u = data.user[q.id];
+      const p = data.partner[q.id];
+      const diff = (u !== undefined && p !== undefined) ? Math.abs(u - p) : null;
+      return { ...q, u, p, diff };
+    }).filter(i => i.diff !== null).sort((a, b) => b.diff - a.diff);
+
+    return (
+      <div className="max-w-4xl mx-auto p-4 py-8">
+        <button onClick={() => setView('welcome')} className="flex items-center gap-1 text-slate-500 font-bold mb-6 hover:text-indigo-600 transition-colors">
+          <ChevronLeft size={20} /> 返回主頁
+        </button>
+
+        <div className="bg-white rounded-[2.5rem] shadow-xl p-8 md:p-12 mb-8 border border-slate-50">
+          <h2 className="text-3xl font-black text-slate-900 mb-8 text-center">價值觀共識報告 (實時雲端版)</h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+            <div className="p-6 bg-indigo-50 rounded-3xl text-center">
+              <p className="text-sm font-bold text-indigo-400 uppercase tracking-widest mb-2">已對比題目</p>
+              <p className="text-4xl font-black text-indigo-700">{diffItems.length}</p>
+            </div>
+            <div className="p-6 bg-rose-50 rounded-3xl text-center">
+              <p className="text-sm font-bold text-rose-400 uppercase tracking-widest mb-2">極大分歧 (≥3)</p>
+              <p className="text-4xl font-black text-rose-700">{diffItems.filter(i => i.diff >= 3).length}</p>
+            </div>
+            <div className="p-6 bg-teal-50 rounded-3xl text-center">
+              <p className="text-sm font-bold text-teal-400 uppercase tracking-widest mb-2">完全共識</p>
+              <p className="text-4xl font-black text-teal-700">{diffItems.filter(i => i.diff === 0).length}</p>
+            </div>
+          </div>
+
+          <h3 className="text-xl font-black text-slate-800 mb-6 flex items-center gap-2">
+            <span className="w-2 h-6 bg-rose-500 rounded-full"></span> 優先討論建議 (分歧最大)
+          </h3>
+
+          <div className="space-y-4">
+            {diffItems.slice(0, 10).map(item => (
+              <div key={item.id} className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                <div className="flex justify-between items-start mb-4">
+                  <p className="font-bold text-slate-800 pr-4">Q{item.id}. {item.text}</p>
+                  <span className={`px-3 py-1 rounded-lg text-xs font-black ${item.diff >= 2 ? 'bg-rose-500 text-white' : 'bg-slate-200 text-slate-500'}`}>
+                    差距 {item.diff}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4">
+                   <div className="flex-1 h-2 bg-slate-200 rounded-full relative">
+                      <div className="absolute w-4 h-4 bg-indigo-600 rounded-full border-2 border-white -mt-1 shadow-sm transition-all" style={{ left: `${(item.u-1)*25}%` }}></div>
+                      <div className="absolute w-4 h-4 bg-teal-600 rounded-full border-2 border-white -mt-1 shadow-sm transition-all" style={{ left: `${(item.p-1)*25}%` }}></div>
+                   </div>
+                   <div className="flex gap-4 text-[10px] font-black uppercase tracking-tighter text-slate-400 whitespace-nowrap">
+                      <span>自己: {item.u}</span>
+                      <span>伴侶: {item.p}</span>
+                   </div>
+                </div>
+              </div>
+            ))}
+            {diffItems.length === 0 && (
+              <div className="text-center py-12 text-slate-400 font-medium">
+                目前尚無雙方重合的填寫數據，請伴侶填寫後再回來查看。
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+}
+
